@@ -500,19 +500,18 @@ Returns the number of bits of multiple precision number at bn.
 
 int _libssh2_bn_set_word(_libssh2_bn *bn, unsigned long val);
 Sets the value of bn to val.
-Returns 1 on success, 0 otherwise.
+Returns 0 on success, otherwise non-zero.
 
-_libssh2_bn * _libssh2_bn_from_bin(_libssh2_bn *bn, int len,
+int _libssh2_bn_from_bin(_libssh2_bn *bn, int len,
                                    const unsigned char *val);
 Converts the positive integer in big-endian form of length len at val
-into a _libssh2_bn and place it in bn. If bn is NULL, a new _libssh2_bn is
-created.
-Returns a pointer to target _libssh2_bn or NULL if error.
+into a _libssh2_bn and place it in bn.
+Returns 0 on success, otherwise non-zero.
 
 int _libssh2_bn_to_bin(_libssh2_bn *bn, unsigned char *val);
 Converts the absolute value of bn into big-endian form and store it at
 val. val must point to _libssh2_bn_bytes(bn) bytes of memory.
-Returns the length of the big-endian number.
+Returns 0 on success, otherwise non-zero.
 
 
 7) Private key algorithms.
