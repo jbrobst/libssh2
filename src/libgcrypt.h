@@ -202,9 +202,7 @@
     gcry_mpi_scan(&((bn)), GCRYMPI_FMT_USG, val, len, NULL)
 #define _libssh2_bn_to_bin(bn, val) \
     gcry_mpi_print(GCRYMPI_FMT_USG, val, _libssh2_bn_bytes(bn), NULL, bn)
-#define _libssh2_bn_bytes(bn) \
-    (gcry_mpi_get_nbits(bn) / 8 + \
-         ((gcry_mpi_get_nbits(bn) % 8 == 0) ? 0 : 1))
+#define _libssh2_bn_bytes(bn) ((gcry_mpi_get_nbits(bn) + 7) / 8)
 #define _libssh2_bn_bits(bn) gcry_mpi_get_nbits(bn)
 #define _libssh2_bn_free(bn) gcry_mpi_release(bn)
 
