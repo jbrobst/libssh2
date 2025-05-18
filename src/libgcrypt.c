@@ -483,6 +483,184 @@ fail:
 }
 #endif
 
+#if LIBSSH2_ED25519
+int
+_libssh2_curve25519_new(LIBSSH2_SESSION *session, uint8_t **out_public_key,
+                        uint8_t **out_private_key)
+{
+    unsigned char *priv = NULL;
+    unsigned char pub[LIBSSH2_ED25519_KEY_LEN];
+    unsigned char *sess_priv = NULL;
+    unsigned char *sess_pub = NULL;
+
+    if(gcry_ecc_get_algo_keylen(GCRY_ECC_CURVE25519) != LIBSSH2_ED25519_KEY_LEN)
+        return -1;
+
+    /* We want out_private_key to be the 32 random bytes pre-scalar-decoding.
+     * Thus, we do not use gcry_pk_genkey with an s-expression like
+     * (genkey(ecc(curve Curve25519)(flags djb-tweak))) since the generated
+     * private key (d) will already be the decoded scalar (from which there is
+     * no way to recover the originally generated bits). */
+
+    priv = gcry_random_bytes_secure(LIBSSH2_ED25519_KEY_LEN,
+                                    GCRY_VERY_STRONG_RANDOM);
+    if(!priv)
+        return -1;
+
+    if(gcry_ecc_mul_point(GCRY_ECC_CURVE25519, pub, priv, NULL))
+        goto fail;
+
+    if(out_private_key) {
+        sess_priv = LIBSSH2_ALLOC(session, LIBSSH2_ED25519_KEY_LEN);
+        if(!sess_priv)
+            goto fail;
+        memcpy(sess_priv, priv, LIBSSH2_ED25519_KEY_LEN);
+    }
+
+    if(out_public_key) {
+        sess_pub = LIBSSH2_ALLOC(session, LIBSSH2_ED25519_KEY_LEN);
+        if(!sess_pub)
+            goto fail;
+        memcpy(sess_pub, pub, LIBSSH2_ED25519_KEY_LEN);
+    }
+
+    if(sess_priv)
+        *out_private_key = sess_priv;
+    if(sess_pub)
+        *out_public_key = sess_pub;
+    gcry_free(priv);
+    return 0;
+
+fail:
+    if(sess_pub)
+        LIBSSH2_FREE(session, sess_pub);
+    if(sess_priv)
+        LIBSSH2_FREE(session, sess_priv);
+    if(priv)
+        gcry_free(priv);
+    return -1;
+}
+
+static const unsigned char pk_ed25519_der[] = {
+    0x30, 0x05, 0x06, 0x03, /* seq { oid */
+    40 * 1 + 3, 101, 112, /* { id-ed25519: 1.3.101.112 }} */
+    0x04, LIBSSH2_ED25519_KEY_LEN + 2, /* PrivateKey */
+    0x04, LIBSSH2_ED25519_KEY_LEN /* { CurvePrivateKey } */
+};
+
+int
+_libssh2_ed25519_new_private(libssh2_ed25519_ctx **ed_ctx,
+                            LIBSSH2_SESSION *session,
+                            const char *filename, const uint8_t *passphrase)
+{
+    FILE *fp;
+    int ret;
+    unsigned char *data, *save_data;
+    size_t datalen;
+    unsigned char *version;
+    unsigned int version_len;
+    gcry_sexp_t s_key;
+
+    if(!session) {
+        _libssh2_error(session, LIBSSH2_ERROR_PROTO,
+                       "Session is required");
+        return -1;
+    }
+
+    if(passphrase && *passphrase) {
+        return _libssh2_error(
+            session,
+            LIBSSH2_ERROR_INVAL,
+            "Passphrase-protected ED25519 private key files are unsupported");
+    }
+
+    _libssh2_init_if_needed();
+
+    fp = fopen(filename, FOPEN_READTEXT);
+    if(!fp) {
+        _libssh2_error(session, LIBSSH2_ERROR_FILE,
+                       "Unable to open ED25519 private key file");
+        return -1;
+    }
+
+    ret = _libssh2_pem_parse(session,
+                             "-----BEGIN PRIVATE KEY-----",
+                             "-----END PRIVATE KEY-----",
+                             passphrase,
+                             fp, &data, &datalen);
+    fclose(fp);
+    if(ret)
+        return -1;
+
+    save_data = data;
+
+    if(_libssh2_pem_decode_sequence(&data, &datalen))
+        goto fail;
+
+    if(_libssh2_pem_decode_integer(&data, &datalen, &version, &version_len) ||
+       version_len != 1 || (*version != 0 && *version != 1))
+        goto fail;
+
+    if(datalen < sizeof(pk_ed25519_der) ||
+       memcmp(data, pk_ed25519_der, sizeof(pk_ed25519_der)))
+        goto fail;
+    data += sizeof(pk_ed25519_der);
+    datalen -= sizeof(pk_ed25519_der);
+
+    if(datalen < LIBSSH2_ED25519_KEY_LEN)
+        goto fail;
+
+    if(gcry_sexp_build(&s_key, NULL,
+                       "(private-key(ecc(curve Ed25519)(flags eddsa)(d %b)))",
+                       LIBSSH2_ED25519_KEY_LEN, data))
+        goto fail;
+
+    *ed_ctx = s_key;
+    LIBSSH2_FREE(session, save_data);
+    return 0;
+
+fail:
+    LIBSSH2_FREE(session, save_data);
+    return -1;
+}
+
+int
+_libssh2_ed25519_new_public(libssh2_ed25519_ctx **ed_ctx,
+                            LIBSSH2_SESSION *session,
+                            const unsigned char *raw_pub_key,
+                            const size_t key_len)
+{
+    gcry_sexp_t s_key;
+    if(!ed_ctx)
+        return -1;
+    if(gcry_sexp_build(&s_key, NULL,
+                       "(public-key(ecc(curve Ed25519)(flags eddsa)(q %b)))",
+                       key_len, raw_pub_key))
+        return _libssh2_error(session, LIBSSH2_ERROR_PROTO,
+                              "could not create ED25519 public key");
+    *ed_ctx = s_key;
+    return 0;
+}
+
+
+int
+_libssh2_ed25519_new_private_frommemory(libssh2_ed25519_ctx **ed_ctx,
+                                        LIBSSH2_SESSION *session,
+                                        const char *filedata,
+                                        size_t filedata_len,
+                                        const unsigned char *passphrase)
+{
+    (void)ed_ctx;
+    (void)filedata;
+    (void)filedata_len;
+    (void)passphrase;
+
+    return _libssh2_error(session, LIBSSH2_ERROR_METHOD_NOT_SUPPORTED,
+                          "Unable to extract private key from memory: "
+                          "Method unimplemented in libgcrypt backend");
+}
+#endif
+
 #if LIBSSH2_RSA
 #if LIBSSH2_RSA_SHA1
 int
@@ -668,6 +846,121 @@ _libssh2_dsa_sha1_verify(libssh2_dsa_ctx * dsactx,
     gcry_sexp_release(s_hash);
 
     return (rc == 0) ? 0 : -1;
+}
+#endif
+
+#if LIBSSH2_ED25519
+int
+_libssh2_ed25519_sign(libssh2_ed25519_ctx *ctx, LIBSSH2_SESSION *session,
+                      uint8_t **out_sig, size_t *out_sig_len,
+                      const uint8_t *message, size_t message_len)
+{
+    gcry_sexp_t s_data = NULL;
+    gcry_error_t err;
+    gcry_sexp_t s_sig = NULL;
+    gcry_mpi_t r = NULL, s = NULL;
+    unsigned int rlen = 0, slen = 0;
+    const unsigned char *rbuf = NULL, *sbuf = NULL;
+    unsigned char *sig = NULL;
+
+    if(gcry_sexp_build(&s_data, NULL,
+                       "(data(flags eddsa)(hash-algo sha512)(value %b))",
+                       message_len, message))
+        return -1;
+
+    err = gcry_pk_sign(&s_sig, s_data, ctx);
+    gcry_sexp_release(s_data);
+    if(err)
+        return -1;
+
+    err = gcry_sexp_extract_param(s_sig, "sig-val", "/rs", &r, &s, NULL);
+    gcry_sexp_release(s_sig);
+    if(err)
+        return -1;
+
+    rbuf = gcry_mpi_get_opaque(r, &rlen);
+    sbuf = gcry_mpi_get_opaque(s, &slen);
+    if(!r || !s)
+        goto fail;
+
+    rlen = (rlen + 7) / 8;
+    slen = (slen + 7) / 8;
+    if(rlen + slen != LIBSSH2_ED25519_SIG_LEN)
+        goto fail;
+
+    sig = LIBSSH2_ALLOC(session, LIBSSH2_ED25519_SIG_LEN);
+    if(!sig)
+        goto fail;
+
+    memcpy(sig, rbuf, rlen);
+    memcpy(sig + rlen, sbuf, slen);
+
+    *out_sig = sig;
+    *out_sig_len = LIBSSH2_ED25519_SIG_LEN;
+
+    gcry_mpi_release(r);
+    gcry_mpi_release(s);
+    return 0;
+
+fail:
+    gcry_mpi_release(r);
+    gcry_mpi_release(s);
+    return -1;
+}
+
+int
+_libssh2_curve25519_gen_k(_libssh2_bn **k,
+                          uint8_t private_key[LIBSSH2_ED25519_KEY_LEN],
+                          uint8_t server_public_key[LIBSSH2_ED25519_KEY_LEN])
+{
+    unsigned char k_raw[LIBSSH2_ED25519_KEY_LEN];
+
+    if(!k || *k ||
+       gcry_ecc_get_algo_keylen(GCRY_ECC_CURVE25519) != LIBSSH2_ED25519_KEY_LEN)
+        return -1;
+
+    if(gcry_ecc_mul_point(GCRY_ECC_CURVE25519, k_raw,
+                          private_key, server_public_key))
+        return -1;
+
+    if(gcry_mpi_scan(k, GCRYMPI_FMT_USG, k_raw, sizeof(k_raw), NULL))
+        return -1;
+
+    return 0;
+}
+
+int
+_libssh2_ed25519_verify(libssh2_ed25519_ctx *ctx, const uint8_t *s,
+                        size_t s_len, const uint8_t *m, size_t m_len)
+{
+    gcry_sexp_t s_data;
+    gcry_sexp_t s_sig;
+    int ret;
+
+    if(s_len != LIBSSH2_ED25519_SIG_LEN)
+        return -1;
+
+    if(gcry_sexp_build(&s_data, NULL,
+                       "(data(flags eddsa)(hash-algo sha512)(value %b))",
+                       m_len, m))
+        return -1;
+
+    if(gcry_sexp_build(&s_sig, NULL,
+                       "(sig-val(eddsa (r %b)(s %b)))",
+                       LIBSSH2_ED25519_SIG_LEN / 2,
+                       s,
+                       LIBSSH2_ED25519_SIG_LEN / 2,
+                       s + LIBSSH2_ED25519_SIG_LEN / 2)) {
+        gcry_sexp_release(s_data);
+        return -1;
+    }
+
+    ret = gcry_pk_verify(s_sig, s_data, ctx) ? -1 : 0;
+
+    gcry_sexp_release(s_sig);
+    gcry_sexp_release(s_data);
+
+    return ret;
 }
 #endif
 

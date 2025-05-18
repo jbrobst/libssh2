@@ -64,7 +64,12 @@
 #define LIBSSH2_RSA_SHA2 0
 #define LIBSSH2_DSA 1
 #define LIBSSH2_ECDSA 0
+
+#if defined(GCRYPT_VERSION_NUMBER) && GCRYPT_VERSION_NUMBER >= 0x010901
+#define LIBSSH2_ED25519 1
+#else
 #define LIBSSH2_ED25519 0
+#endif
 
 #include "crypto_config.h"
 
@@ -155,6 +160,11 @@
 #if LIBSSH2_ECDSA
 #else
 #define _libssh2_ec_key void
+#endif
+
+#if LIBSSH2_ED25519
+#define libssh2_ed25519_ctx struct gcry_sexp
+#define _libssh2_ed25519_free(ctx) gcry_sexp_release(ctx)
 #endif
 
 #define _libssh2_cipher_type(name) int name

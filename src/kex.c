@@ -1697,7 +1697,7 @@ dh_gex_clean_exit:
     return ret;
 }
 
-#if LIBSSH2_ECDSA
+#if LIBSSH2_ECDSA || LIBSSH2_ED25519
 
 /* LIBSSH2_KEX_METHOD_EC_SHA_HASH_CREATE_VERIFY
  *
@@ -1812,6 +1812,10 @@ do {                                                                         \
         rc = -1;                                                             \
     }                                                                        \
 } while(0)
+
+#endif
+
+#if LIBSSH2_ECDSA
 
 /* kex_session_ecdh_curve_type
  * returns the EC curve type by name used in key exchange
@@ -2561,7 +2565,7 @@ curve25519_sha256(LIBSSH2_SESSION *session, unsigned char *data,
     if(exchange_state->state == libssh2_NB_state_idle) {
 
         /* Setup initial values */
-        exchange_state->k = _libssh2_bn_init();
+        exchange_state->k = _libssh2_bn_init_from_bin();
 
         exchange_state->state = libssh2_NB_state_created;
     }

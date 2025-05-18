@@ -892,13 +892,11 @@ If defined as 0, the rest of this section can be omitted.
 libssh2_ed25519_ctx
 Type of an ED25519 computation context. Generally a struct.
 
-int _libssh2_curve25519_new(LIBSSH2_SESSION *session, libssh2_ed25519_ctx **ctx,
-                            uint8_t **out_public_key,
+int _libssh2_curve25519_new(LIBSSH2_SESSION *session, uint8_t **out_public_key,
                             uint8_t **out_private_key);
-Generates an ED25519 key pair, stores a pointer to them at out_private_key
-and out_public_key respectively and stores at ctx a new ED25519 context for
-this key.
-Argument ctx, out_private_key and out_public key may be NULL to disable storing
+Generates an X25519 key pair, stores a pointer to them at out_private_key
+and out_public_key respectively.
+Either out_private_key and/or out_public_key may be NULL to disable storing
 the corresponding value.
 Length of each key is LIBSSH2_ED25519_KEY_LEN (32 bytes).
 Key buffers are allocated and should be released by caller after use.
@@ -953,8 +951,8 @@ int _libssh2_curve25519_gen_k(_libssh2_bn **k,
                               uint8_t private_key[LIBSSH2_ED25519_KEY_LEN],
                               uint8_t srvr_public_key[LIBSSH2_ED25519_KEY_LEN]);
 Computes a shared ED25519 secret key from the given raw server public key and
-raw client public key and stores it as a big number in *k. Big number should
-have been initialized before calling this function.
+raw client public key and stores it as a big number in *k. k will have been
+initialized with _libssh2_bn_init_from_bin before calling this function.
 Returns 0 if OK, else -1.
 This procedure is already prototyped in crypto.h.
 
