@@ -1467,6 +1467,8 @@ kex_method_diffie_hellman_group_exchange_sha1_key_exchange(
 {
     int ret = 0;
     int rc;
+    size_t p_len;
+    libssh2_sha1_ctx exchange_hash_ctx;
 
     if(key_state->state == libssh2_NB_state_idle) {
         key_state->p = _libssh2_bn_init_from_bin();
@@ -1499,6 +1501,10 @@ kex_method_diffie_hellman_group_exchange_sha1_key_exchange(
     }
 
     if(key_state->state == libssh2_NB_state_sent) {
+        size_t g_len;
+        unsigned char *p, *g;
+        struct string_buf buf;
+
         rc = _libssh2_packet_require(session, SSH_MSG_KEX_DH_GEX_GROUP,
                                      &key_state->data, &key_state->data_len,
                                      0, NULL, 0, &key_state->req_state);
@@ -1510,15 +1516,6 @@ kex_method_diffie_hellman_group_exchange_sha1_key_exchange(
                                  "Timeout waiting for GEX_GROUP reply");
             goto dh_gex_clean_exit;
         }
-
-        key_state->state = libssh2_NB_state_sent1;
-    }
-
-    if(key_state->state == libssh2_NB_state_sent1) {
-        size_t p_len, g_len;
-        unsigned char *p, *g;
-        struct string_buf buf;
-        libssh2_sha1_ctx exchange_hash_ctx;
 
         if(key_state->data_len < 9) {
             ret = _libssh2_error(session, LIBSSH2_ERROR_PROTO,
@@ -1556,6 +1553,10 @@ kex_method_diffie_hellman_group_exchange_sha1_key_exchange(
             goto dh_gex_clean_exit;
         }
 
+        key_state->state = libssh2_NB_state_sent1;
+    }
+
+    if(key_state->state == libssh2_NB_state_sent1) {
         ret = diffie_hellman_sha_algo(session, key_state->g, key_state->p,
                                       (int)p_len, 1,
                                       (void *)&exchange_hash_ctx,
@@ -1588,6 +1589,8 @@ kex_method_diffie_hellman_group_exchange_sha256_key_exchange(
 {
     int ret = 0;
     int rc;
+    size_t p_len;
+    libssh2_sha256_ctx exchange_hash_ctx;
 
     if(key_state->state == libssh2_NB_state_idle) {
         key_state->p = _libssh2_bn_init();
@@ -1621,6 +1624,10 @@ kex_method_diffie_hellman_group_exchange_sha256_key_exchange(
     }
 
     if(key_state->state == libssh2_NB_state_sent) {
+        unsigned char *p, *g;
+        size_t g_len;
+        struct string_buf buf;
+
         rc = _libssh2_packet_require(session, SSH_MSG_KEX_DH_GEX_GROUP,
                                      &key_state->data, &key_state->data_len,
                                      0, NULL, 0, &key_state->req_state);
@@ -1632,15 +1639,6 @@ kex_method_diffie_hellman_group_exchange_sha256_key_exchange(
                                  "Timeout waiting for GEX_GROUP reply SHA256");
             goto dh_gex_clean_exit;
         }
-
-        key_state->state = libssh2_NB_state_sent1;
-    }
-
-    if(key_state->state == libssh2_NB_state_sent1) {
-        unsigned char *p, *g;
-        size_t p_len, g_len;
-        struct string_buf buf;
-        libssh2_sha256_ctx exchange_hash_ctx;
 
         if(key_state->data_len < 9) {
             ret = _libssh2_error(session, LIBSSH2_ERROR_PROTO,
@@ -1678,6 +1676,10 @@ kex_method_diffie_hellman_group_exchange_sha256_key_exchange(
             goto dh_gex_clean_exit;
         }
 
+        key_state->state = libssh2_NB_state_sent1;
+    }
+
+    if(key_state->state == libssh2_NB_state_sent1) {
         ret = diffie_hellman_sha_algo(session, key_state->g, key_state->p,
                                       (int)p_len, 256,
                                       (void *)&exchange_hash_ctx,
